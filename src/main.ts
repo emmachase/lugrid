@@ -29,6 +29,20 @@ function measureText(text: string): { width: number, height: number } {
     return { width: text.length*4, height: LINE_HEIGHT };
 }
 
+function measureTextUtil(text: string, maxWidth: number): { text: string, leftover: string, width: number, height: number } {
+    // TODO: Newlines
+    // TODO: Measure text using font
+    const maxChars = Math.floor(maxWidth / 4);
+    if (text.length <= maxChars) {
+        return { text, leftover: "", width: text.length*4, height: LINE_HEIGHT };
+    }
+
+    const leftover = text.slice(maxChars);
+    const width = maxChars*4;
+    const height = LINE_HEIGHT;
+    return { text: text.slice(0, maxChars), leftover, width, height };
+}
+
 function JSONStringify(obj: any, indent: string = ""): string {
     if (typeof obj === "string") {
         return `"${obj}"`;
@@ -468,7 +482,7 @@ class InlineLayout implements LayoutNode {
         for (const node of this.nodes) {
             if (node instanceof TextElement) {
                 if (currentText === null) {
-                    currentText = node;
+                    currentText = new TextElement(node.text);
                     combinedNodes.push(currentText);
                 } else {
                     currentText.text += node.text;
@@ -482,26 +496,56 @@ class InlineLayout implements LayoutNode {
         // Second pass: layout the combined nodes
         for (const node of combinedNodes) {
             if (node instanceof TextElement) {
+                // Split text into words and process each word
                 const words = node.text.split(" ")
                 for (let i = 0; i < words.length; i++) {
                     const word = words[i];
                     if (word == "") continue;
 
+                    // Add space before word if not first word on line
                     let wordWith = word;
                     if (currentLine.length > 0 && i > 0) {
                         wordWith = " " + wordWith;
                     }
 
+                    // Measure the word's dimensions
                     const { width, height } = measureText(wordWith);
 
-                    // print(`${word} ${currentInlineSize + width}, ${containerInlineSize}`)
-                    if (currentInlineSize + width > containerInlineSize && (width < containerInlineSize || currentLine.length !== 0)) {
-                        // TODO: Do we need to check if the next word is too long and break it?
-                        currentLine = [word];
-                        currentInlineSize = width;
-                        currentBlockHeight += height; // TODO: Track max for line height if support variable line heights
-                        lines.push(currentLine);
+                    // Check if word needs to start a new line:
+                    // - Current line width + word width exceeds container width AND
+                    // - Current line has content, otherwise we need to break the word
+                    if (currentInlineSize + width > containerInlineSize) {
+                        if (
+                            currentLine.length !== 0 &&
+                            width < containerInlineSize // If the word is longer than the whole container, don't bother starting a new line first
+                        ) {
+                            // Start new line
+                            currentLine = [];
+                            currentInlineSize = 0;
+                            currentBlockHeight += height;
+                            lines.push(currentLine);
+
+                            words[i] = word;
+                            i--; // Recheck this word
+                        } else {
+                            // Break the word
+                            const { text: firstPart, width: firstPartWidth, leftover: secondPart } = measureTextUtil(wordWith, containerInlineSize - currentInlineSize);
+
+                            // Add first part to current line
+                            currentLine.push(firstPart);
+                            currentInlineSize += firstPartWidth;
+                            maxInlineSize = Math.max(maxInlineSize, currentInlineSize);
+
+                            currentLine = [];
+                            currentInlineSize = 0;
+                            currentBlockHeight += height;
+                            lines.push(currentLine);
+
+                            words[i] = secondPart; 
+                            i--; // Recheck this word
+                        }
                     } else {
+                        // Add word to current line
                         currentLine.push(wordWith);
                         currentInlineSize += width;
                         maxInlineSize = Math.max(maxInlineSize, currentInlineSize);
@@ -510,6 +554,7 @@ class InlineLayout implements LayoutNode {
                     hadText = true;
                 }
             } else if (node.type === ElementType.BREAK) {
+                // Handle line break elements by starting new empty line
                 currentLine = [];
                 currentInlineSize = 0;
                 currentBlockHeight += LINE_HEIGHT;
@@ -517,7 +562,7 @@ class InlineLayout implements LayoutNode {
             }
         }
 
-        // TODO: Should probably calculate the block height more accurately
+        // Add final line height if there was any text, TODO: Should probably calculate the block height more accurately
         if (hadText) currentBlockHeight += LINE_HEIGHT;
 
         this.marginBox.width = maxInlineSize;
@@ -572,7 +617,7 @@ function paintTree(node: LayoutNode, displayList: DisplayList) {
 
 const myDocument = new Element("document", [
     new Element("block", [
-        new TextElement("Hello, world"),
+        new TextElement("HelloHelloHelloHelloHelloHelloHelloHellookay, world"),
         new TextElement(" "),
         new TextElement("This is a test."),
         new Element("break"),
@@ -584,7 +629,7 @@ const myDocument = new Element("document", [
     new Element("block", [
         new TextElement("Hello, world"),
         new TextElement(" "),
-        new TextElement("This is a test."),
+        new TextElement("ThisThisThisThisThisThis is a test."),
         new Element("break"),
         new TextElement("Okay."),
     ], { 
@@ -595,27 +640,18 @@ const myDocument = new Element("document", [
     backgroundColor: RikoPalette.DarkBlue,
 });
 
-const startTime = os.clock();
+// const startTime = os.clock();
 
 const myLayout = new DocumentLayout(myDocument);
 // print(JSONStringify(myLayout.getMinContentSize(50, 50)));
 // print(JSONStringify(myLayout.getPreferredContentSize()));
 
-myLayout.layout({
-    x: 0,
-    y: 0,
-    width: 100,
-    height: Infinity
-});
-const commands: DisplayList = []
-paintTree(myLayout, commands);
+// const endTime = os.clock();
 
-const endTime = os.clock();
+// print(JSONStringify(commands));
+// print(`Time: ${(endTime - startTime)*1000*1000}us`);
 
-print(JSONStringify(commands));
-print(`Time: ${(endTime - startTime)*1000*1000}us`);
-
-function render() {
+function render(commands: DisplayCommand[]) {
     gpu.clear();
     for (const command of commands) {
         if (command.type === DisplayCommandType.TEXT) {
@@ -627,7 +663,7 @@ function render() {
     gpu.swap();
 }
 
-render()
+
 // sleep(3)
 // for (let i = 0; i < 10; i++) {
 //     const x = coroutine.yield();
@@ -635,6 +671,16 @@ render()
 // }
 
 while (true) {
+    myLayout.layout({
+        x: 0,
+        y: 0,
+        width: 150 + Math.sin(os.clock()) * 75,
+        height: Infinity
+    });
+    const commands: DisplayList = []
+    paintTree(myLayout, commands);
+    render(commands);
+
     const e = coroutine.yield();
     if (e.length > 0) {
         const [key, ...args] = e;
@@ -643,3 +689,5 @@ while (true) {
         }
     }
 }
+
+// print(JSONStringify(myLayout))
