@@ -45,11 +45,9 @@ function JSONStringify(obj: any, indent: string = ""): string {
 }
 
 interface ElementContentSizing {
-    getMinContentSize(
-        maxInlineSize: number,
-        maxBlockSize: number
-    ): { inline: number, block: number };
-    getMaxContentSize(): { inline: number, block: number };
+    getMinContentSizeConstrainedInline(): { inline: number, block: number };
+    getMinContentSizeConstrainedBlock(): { inline: number, block: number };
+    getPreferredContentSize(): { inline: number, block: number };
 }
 
 enum ElementType {
@@ -187,11 +185,14 @@ class DocumentLayout implements LayoutNode {
         )]
     }
 
-    getMinContentSize(maxInlineSize: number, maxBlockSize: number): { inline: number; block: number; } {
-        return this.children[0].getMinContentSize(maxInlineSize, maxBlockSize);
+    getMinContentSizeConstrainedInline(): { inline: number; block: number; } {
+        return this.children[0].getMinContentSizeConstrainedInline();
     }
-    getMaxContentSize(): { inline: number; block: number; } {
-        return this.children[0].getMaxContentSize();
+    getMinContentSizeConstrainedBlock(): { inline: number; block: number; } {
+        return this.children[0].getMinContentSizeConstrainedBlock();
+    }
+    getPreferredContentSize(): { inline: number; block: number; } {
+        return this.children[0].getPreferredContentSize();
     }
 
     layout(box: Box): void {
@@ -207,86 +208,102 @@ class DocumentLayout implements LayoutNode {
     }
 }
 
-class BlockLayout implements LayoutNode {
-    // computedBox: Partial<Box> = {};
-    marginBox: Partial<Box> = {};
-    borderBox: Partial<Box> = {};
-    children: LayoutNode[];
+function hydrateBlockChildrenNodes(node: Element, parent: LayoutNode, allowDirectInline: boolean): LayoutNode[] {
+    const children: LayoutNode[] = [];
 
-    constructor(
-        // public children: LayoutNode[],
-        public node: Element,
-        public parent: LayoutNode
-    ) {
-        this.children = [];
+    if (node.children !== null) {
+        // If we have mixed children, we need to create anonymous blocks
+        const createAnonBlocks = allowDirectInline ? node.children.some(child => child.type === ElementType.BLOCK) : true;
 
-        if (node.children !== null) {
-            // If we have mixed children, we need to create anonymous blocks
-            const createAnonBlocks = node.children.some(child => child.type === ElementType.BLOCK);
+        let currentInline: Element[] | null = null;
+        for (const child of node.children) {
+            if (child.type === ElementType.BLOCK) {
+                children.push(new BlockLayout(
+                    child,
+                    parent,
+                ));
 
-            let currentInline: Element[] | null = null;
-            for (const child of node.children) {
-                if (child.type === ElementType.BLOCK) {
-                    this.children.push(new BlockLayout(
-                        child,
-                        this,
-                    ));
-
-                    // Reset current inline to start a new block
-                    currentInline = null;
-                } else {
-                    if (currentInline === null) {
-                        currentInline = [child];
-                        
-                        if (createAnonBlocks) {
-                            this.children.push(new BlockLayout(
-                                new Element("block", currentInline),
-                                this,
-                            ));
-                        } else {
-                            this.children.push(new InlineLayout(
-                                currentInline,
-                                this,
-                            ));
-                        }
-
+                // Reset current inline to start a new block
+                currentInline = null;
+            } else {
+                if (currentInline === null) {
+                    currentInline = [child];
+                    
+                    if (createAnonBlocks) {
+                        children.push(new BlockLayout(
+                            new Element("block", currentInline),
+                            parent,
+                        ));
                     } else {
-                        currentInline.push(child);
+                        children.push(new InlineLayout(
+                            currentInline,
+                            parent,
+                        ));
                     }
+
+                } else {
+                    currentInline.push(child);
                 }
             }
         }
     }
 
-    getMinContentSize(maxInlineSize: number, maxBlockSize: number): { inline: number; block: number; } {
+    return children;
+}
+
+class BlockLayout implements LayoutNode {
+    marginBox: Partial<Box> = {};
+    borderBox: Partial<Box> = {};
+    children: LayoutNode[];
+
+    constructor(
+        public node: Element,
+        public parent: LayoutNode
+    ) {
+        this.children = hydrateBlockChildrenNodes(node, parent, true);
+    }
+
+    getMinContentSizeConstrainedInline(): { inline: number; block: number; } {
         let inline = 0;
         let block = 0;
 
+        const contentPadding = this.node.style.padding * 2 + this.node.style.margin * 2;
+
         for (const child of this.children) {
-            const { inline: childInline, block: childBlock } = child.getMinContentSize(maxInlineSize, maxBlockSize - block);
+            const { inline: childInline, block: childBlock } = child.getMinContentSizeConstrainedInline();
             inline = Math.max(inline, childInline);
             block += childBlock;
         }
 
         return {
-            inline: inline + this.node.style.padding * 2 + this.node.style.margin * 2,
-            block: block + this.node.style.padding * 2 + this.node.style.margin * 2
+            inline: inline + contentPadding,
+            block: block + contentPadding
         };
     }
 
-    getMaxContentSize(): { inline: number; block: number; } {
+    getMinContentSizeConstrainedBlock(): { inline: number; block: number; } {
+        // TODO
+        return {
+            inline: 0,
+            block: 0
+        };
+    }
+
+    getPreferredContentSize(): { inline: number; block: number; } {
         let inline = 0;
         let block = 0;
 
+        const contentPadding = this.node.style.padding * 2 + this.node.style.margin * 2;
+
         for (const child of this.children) {
-            const { inline: childInline, block: childBlock } = child.getMaxContentSize();
+            const { inline: childInline, block: childBlock } = child.getPreferredContentSize();
             inline = Math.max(inline, childInline);
             block += childBlock;
         }
 
         return {
-            inline: inline + this.node.style.padding * 2 + this.node.style.margin * 2,
-            block: block + this.node.style.padding * 2 + this.node.style.margin * 2
+            inline: inline + contentPadding,
+            block: block + contentPadding
         };
     }
 
@@ -338,6 +355,62 @@ class BlockLayout implements LayoutNode {
     }
 }
 
+class GridLayout implements LayoutNode {
+    children: LayoutNode[];
+    marginBox: Partial<Box> = {};
+    borderBox: Partial<Box> = {};
+
+    constructor(
+        public node: Element,
+        public parent: LayoutNode,
+    ) {
+        // Group inline children into anonymous blocks
+        this.children = hydrateBlockChildrenNodes(node, parent, false);
+    }
+
+    layout(box: Box): void {
+        const padding = this.node.style.padding;
+        const margin = this.node.style.margin;
+
+        const computedMarginBox = {
+            width: box.width,
+            x: box.x,
+            y: box.y,
+            height: 0
+        }
+        const computedBox = {
+            width: box.width - margin * 2,
+            x: box.x + margin,
+            y: box.y + margin,
+            height: 0
+        };
+        this.marginBox = computedMarginBox;
+        this.borderBox = computedBox;
+
+        // TODO: Layout children
+    }
+
+    paint(): DisplayList {
+        const commands: DisplayList = [];
+
+        if (this.node.style.backgroundColor) {
+            commands.push(paintBoxRect(this.borderBox as Box, this.node.style.backgroundColor));
+        }
+
+        return commands;
+    }
+
+    getMinContentSizeConstrainedInline(): { inline: number; block: number; } {
+        throw new Error("Method not implemented.");
+    }
+    getMinContentSizeConstrainedBlock(): { inline: number; block: number; } {
+        throw new Error("Method not implemented.");
+    }
+    getPreferredContentSize(): { inline: number; block: number; } {
+        throw new Error("Method not implemented.");
+    }
+}
+
 class InlineLayout implements LayoutNode {
     // computedBox: Partial<Box> = {};
     marginBox: Partial<Box> = {};
@@ -370,7 +443,7 @@ class InlineLayout implements LayoutNode {
         // }
     }
 
-    getMinContentSize(maxInlineSize: number, maxBlockSize: number): { inline: number; block: number; } {
+    getMinContentSizeConstrainedInline(): { inline: number; block: number; } {
         // let inline = 0;
         // let block = 0;
 
@@ -395,13 +468,17 @@ class InlineLayout implements LayoutNode {
             x: 0,
             y: 0,
             width: 0, // maxInlineSize,
-            height: maxBlockSize
+            height: Infinity
         }); // TODO: This is a hack
 
         return { inline: this.marginBox.width!, block: this.marginBox.height! };
     }
 
-    getMaxContentSize(): { inline: number; block: number; } {
+    getMinContentSizeConstrainedBlock(): { inline: number; block: number; } {
+        return this.getPreferredContentSize(); // TODO: Is this correct?
+    }
+
+    getPreferredContentSize(): { inline: number; block: number; } {
         // let inline = 0;
         // let block = 0;
 
@@ -440,15 +517,30 @@ class InlineLayout implements LayoutNode {
 
         let hadText = false;
 
+        // First pass: combine sibling text nodes
+        const combinedNodes: Element[] = [];
+        let currentText: TextElement | null = null;
         for (const node of this.nodes) {
+            if (node instanceof TextElement) {
+                if (currentText === null) {
+                    currentText = node;
+                    combinedNodes.push(currentText);
+                } else {
+                    currentText.text += node.text;
+                }
+            } else {
+                combinedNodes.push(node);
+                currentText = null;
+            }
+        }
+
+        // Second pass: layout the combined nodes
+        for (const node of combinedNodes) {
             if (node instanceof TextElement) {
                 const words = node.text.split(" ")
                 for (let i = 0; i < words.length; i++) {
                     const word = words[i];
                     if (word == "") continue;
-
-                    // FIXME: Spaces are not kept properly between nodes.
-                    // Maybe we should combine the text nodes beforehand
 
                     let wordWith = word;
                     if (currentLine.length > 0 && i > 0) {
@@ -489,18 +581,6 @@ class InlineLayout implements LayoutNode {
         this.marginBox.y = box.y;
 
         this.lines = lines
-        // this.computedBox.width = this.parent.computedBox.width;
-        // this.computedBox.x = this.parent.computedBox.x;
-        // this.computedBox.y = this.parent.computedBox.y;
-
-        // for (const child of this.children) {
-        //     child.layout();
-        // }
-
-        // this.computedBox.height = this.children.reduce(
-        //     (acc, child) => Math.max(acc, child.computedBox.height ?? 0), // TODO: Throw error if height is undefined
-        //     0
-        // );
     }
 
     paint(): DisplayList {
@@ -574,7 +654,7 @@ const startTime = os.clock();
 
 const myLayout = new DocumentLayout(myDocument);
 // print(JSONStringify(myLayout.getMinContentSize(50, 50)));
-// print(JSONStringify(myLayout.getMaxContentSize()));
+// print(JSONStringify(myLayout.getPreferredContentSize()));
 
 myLayout.layout({
     x: 0,
