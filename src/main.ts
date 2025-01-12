@@ -421,49 +421,9 @@ class InlineLayout implements LayoutNode {
     constructor(
         public nodes: Element[],
         public parent: LayoutNode
-    ) {
-
-
-        // this.children = [];
-
-        // if (node.children !== null) {
-        //     for (const child of node.children) {
-        //         if (child.type === ElementType.BLOCK) {
-        //             this.children.push(new BlockLayout(
-        //                 child,
-        //                 this,
-        //             ));
-        //         } else {
-        //             this.children.push(new InlineLayout(
-        //                 child,
-        //                 this,
-        //             ));
-        //         }
-        //     }
-        // }
-    }
+    ) {}
 
     getMinContentSizeConstrainedInline(): { inline: number; block: number; } {
-        // let inline = 0;
-        // let block = 0;
-
-        // // TODO: This doesn't seem right
-
-        // for (const node of this.nodes) {
-        //     if (node instanceof TextElement) {
-        //         for (const word of node.text.split(" ")) {
-        //             const { width, height } = measureText(word);
-        //             inline = Math.max(inline, width);
-        //             block += height;
-        //         }
-        //         // const { width, height } = measureText(node.text);
-        //         // inline = Math.max(inline, width);
-        //         // block += height;
-        //     }
-        // }
-
-        // return { inline, block };
-
         this.layout({
             x: 0,
             y: 0,
@@ -479,21 +439,6 @@ class InlineLayout implements LayoutNode {
     }
 
     getPreferredContentSize(): { inline: number; block: number; } {
-        // let inline = 0;
-        // let block = 0;
-
-        // for (const node of this.nodes) {
-        //     if (node instanceof TextElement) {
-        //         for (const word of node.text.split(" ")) {
-        //             const { width, height } = measureText(word);
-        //             inline = Math.max(inline, width);
-        //             block += height;
-        //         }
-        //         // const { width, height } = measureText(node.text);
-        //         // inline = Math.max(inline, width);
-        //         // block += height;
-        //     }
-        // }
         this.layout({
             x: 0,
             y: 0,
