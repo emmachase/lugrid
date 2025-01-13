@@ -66,6 +66,7 @@ interface ElementContentSizing {
 
 enum ElementType {
     BLOCK = "block",
+    GRID = "grid",
     // INLINE,
     TEXT = "text",
     BREAK = "break",
@@ -77,6 +78,71 @@ interface CommonStyle {
     padding: number;
     margin: number;
     backgroundColor?: RikoPalette;
+
+    // Grid item positioning
+    gridColumnStart?: number;
+    gridColumnEnd?: number;
+    gridRowStart?: number; 
+    gridRowEnd?: number;
+
+    // Grid Shorthands
+    gridColumn?: string; // e.g. "1 / 3" or "1 / span 2"
+    gridRow?: string;
+    gridArea?: string; // e.g. "1 / 1 / 3 / 3"
+    
+    // Grid/Flexbox Alignment
+    justifySelf?: "start" | "end" | "center" | "stretch";
+    alignSelf?: "start" | "end" | "center" | "stretch";
+}
+
+type DefiniteMeasure = { type: "px", value: number } | { type: "percent", value: number };
+type FlexibleMeasure = DefiniteMeasure | { type: "flex", factor: number };
+type GridTemplateMeasure = FlexibleMeasure
+    | "auto" | "min-content" | "max-content"      
+    | { type: "fit-content", limit: DefiniteMeasure }
+    | { type: "repeat", count: number, measure: FlexibleMeasure }
+    | { type: "repeat", count: "auto-fill" | "auto-fit", measure: DefiniteMeasure }
+    ;
+
+function parseFlexibleMeasureMeasure(measure: string): FlexibleMeasure {
+    if (measure.endsWith("%")) {
+        return { type: "percent", value: parseFloat(measure.slice(0, -1)) };
+    } else if (measure.endsWith("fr")) {
+        return { type: "flex", factor: parseFloat(measure.slice(0, -2)) };
+    } else if (measure.endsWith("px")) {
+        return { type: "px", value: parseFloat(measure.slice(0, -2)) };
+    }
+
+    throw new Error(`Invalid measure: ${measure}`);
+}
+
+type DefiniteMeasureStr = `${number}%` | `${number}px`
+type FlexibleMeasureStr = `${number}fr` | DefiniteMeasureStr
+
+function parseGridTemplateMeasure(
+    measure: "auto" | "min-content" | "max-content" 
+        | FlexibleMeasureStr 
+        | `fit-content(${DefiniteMeasureStr})`
+        | `repeat(${number}, ${FlexibleMeasureStr})`
+        | `repeat(${"auto-fill" | "auto-fit"}, ${DefiniteMeasureStr})`
+): GridTemplateMeasure {
+    if (measure === "auto" || measure === "min-content" || measure === "max-content") {
+        return measure;
+    } else {
+        // TODO: Implement
+        throw new Error("Not implemented");
+    }
+}
+
+interface GridContainerStyle extends CommonStyle {
+    gridTemplateColumns?: GridTemplateMeasure[];
+    gridTemplateRows?: GridTemplateMeasure[];
+
+    justifyContent?: "start" | "end" | "center" | "space-between" | "space-around" | "space-evenly" | "stretch";
+    alignContent?: "start" | "end" | "center" | "space-between" | "space-around" | "space-evenly" | "stretch";
+
+    justifyItems?: "start" | "end" | "center" | "stretch";
+    alignItems?: "start" | "end" | "center" | "stretch";
 }
 
 class Element {
@@ -99,7 +165,16 @@ class TextElement extends Element {
     constructor(
         public text: string,
     ) {
-        super("text");
+        super(ElementType.TEXT);
+    }
+}
+
+class GridElement extends Element {
+    constructor(
+        public children: Element[],
+        style: Partial<GridContainerStyle> = {},
+    ) {
+        super(ElementType.GRID, children, style);
     }
 }
 
@@ -238,6 +313,14 @@ function hydrateBlockChildrenNodes(node: Element, parent: LayoutNode, allowDirec
                 ));
 
                 // Reset current inline to start a new block
+                currentInline = null;
+            } else if (child.type === ElementType.GRID) {
+                children.push(new GridLayout(
+                    child,
+                    parent,
+                ));
+
+                // Reset current inline to start a new grid
                 currentInline = null;
             } else {
                 if (currentInline === null) {
@@ -402,6 +485,19 @@ class GridLayout implements LayoutNode {
         this.borderBox = computedBox;
 
         // TODO: Layout children
+        this.placeGridItems();
+        this.sizeGrid();
+        this.layoutGridItems();
+    }
+
+    placeGridItems() {
+        throw new Error("Method not implemented.");
+    }
+    sizeGrid() {
+        throw new Error("Method not implemented.");
+    }
+    layoutGridItems() {
+        throw new Error("Method not implemented.");
     }
 
     paint(): DisplayList {
@@ -616,25 +712,49 @@ function paintTree(node: LayoutNode, displayList: DisplayList) {
 }
 
 const myDocument = new Element("document", [
-    new Element("block", [
+    new Element(ElementType.BLOCK, [
         new TextElement("HelloHelloHelloHelloHelloHelloHelloHellookay, world"),
         new TextElement(" "),
         new TextElement("This is a test."),
-        new Element("break"),
+        new Element(ElementType.BREAK),
         new TextElement("Okay."),
     ], { 
         padding: 0, margin: 10,
         backgroundColor: RikoPalette.DarkGreen,
     }),
-    new Element("block", [
+    new Element(ElementType.BLOCK, [
         new TextElement("Hello, world"),
         new TextElement(" "),
         new TextElement("ThisThisThisThisThisThis is a test."),
-        new Element("break"),
+        new Element(ElementType.BREAK),
         new TextElement("Okay."),
     ], { 
         padding: 5, margin: 10,
         backgroundColor: RikoPalette.Magenta,
+    }),
+
+    new Element(ElementType.GRID, [
+        new Element(ElementType.BLOCK, [
+            new TextElement("Hello"),
+        ], { backgroundColor: RikoPalette.DarkGreen }),
+        new Element(ElementType.BLOCK, [
+            new TextElement("World"),
+        ], { backgroundColor: RikoPalette.DarkGreen }),
+        new Element(ElementType.BLOCK, [
+            new TextElement("This"),
+        ], { backgroundColor: RikoPalette.DarkGreen }),
+        new Element(ElementType.BLOCK, [
+            new TextElement("Is"),
+        ], { backgroundColor: RikoPalette.DarkGreen }),
+        new Element(ElementType.BLOCK, [
+            new TextElement("A"),
+        ], { backgroundColor: RikoPalette.DarkGreen }),
+        new Element(ElementType.BLOCK, [
+            new TextElement("Test"),
+        ], { backgroundColor: RikoPalette.DarkGreen }),
+    ], {
+        padding: 0, margin: 10,
+        backgroundColor: RikoPalette.DarkBlue,
     }),
 ], {
     backgroundColor: RikoPalette.DarkBlue,

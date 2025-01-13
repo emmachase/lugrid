@@ -11,9 +11,16 @@
         "outDir": "dist",
         "rootDir": "src",
     },
+    "include": [
+        "src/**/*.ts",
+        "types/**/*.d.ts"
+    ],
     "tstl": {
         "luaTarget": "JIT",
         "noImplicitGlobalVariables": true,
         "sourceMapTraceback": true,
+        "luaPlugins": [
+            { "name": "./fix-traceback.ts" }
+        ]
     }
 }

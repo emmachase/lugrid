@@ -28,3 +28,7 @@ declare const gpu: {
 declare const coroutine: {
     yield(this: void, ...args: unknown[]): LuaMultiReturn<[unknown]>;
 }
+
+declare const string: {
+    match(this: void, str: string, pattern: string): LuaMultiReturn<string[]>;
+}

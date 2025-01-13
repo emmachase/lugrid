@@ -5,6 +5,7 @@
     "watch": "tstl --watch"
   },
   "dependencies": {
+    "ts-node": "^10.9.2",
     "typescript": "^5.7.2",
     "typescript-to-lua": "^1.29.0"
   }
